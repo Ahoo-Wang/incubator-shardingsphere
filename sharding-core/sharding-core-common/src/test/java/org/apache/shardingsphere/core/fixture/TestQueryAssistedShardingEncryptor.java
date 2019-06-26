@@ -19,15 +19,10 @@ package org.apache.shardingsphere.core.fixture;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.shardingsphere.spi.algorithm.encrypt.ShardingQueryAssistedEncryptor;
+import org.apache.shardingsphere.spi.encrypt.ShardingQueryAssistedEncryptor;
 
 import java.util.Properties;
 
-/**
- * Test query assisted sharding encryptor.
- *
- * @author panjuan
- */
 @Getter
 @Setter
 public final class TestQueryAssistedShardingEncryptor implements ShardingQueryAssistedEncryptor {
@@ -37,6 +32,10 @@ public final class TestQueryAssistedShardingEncryptor implements ShardingQueryAs
     @Override
     public String getType() {
         return "assistedTest";
+    }
+    
+    @Override
+    public void init() {
     }
     
     @Override

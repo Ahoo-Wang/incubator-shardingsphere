@@ -19,11 +19,17 @@ package org.apache.shardingsphere.shardingjdbc.jdbc.core.statement;
 
 import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
-import org.apache.shardingsphere.core.optimizer.OptimizeEngineFactory;
-import org.apache.shardingsphere.core.parsing.parser.sql.SQLStatement;
-import org.apache.shardingsphere.core.rewrite.EncryptSQLRewriteEngine;
-import org.apache.shardingsphere.core.rewrite.SQLBuilder;
-import org.apache.shardingsphere.core.routing.SQLUnit;
+import org.apache.shardingsphere.core.constant.properties.ShardingPropertiesConstant;
+import org.apache.shardingsphere.core.optimize.OptimizeEngineFactory;
+import org.apache.shardingsphere.core.optimize.result.OptimizeResult;
+import org.apache.shardingsphere.core.parse.sql.statement.SQLStatement;
+import org.apache.shardingsphere.core.parse.sql.statement.dml.DMLStatement;
+import org.apache.shardingsphere.core.rewrite.SQLRewriteEngine;
+import org.apache.shardingsphere.core.rewrite.rewriter.parameter.ParameterRewriter;
+import org.apache.shardingsphere.core.rewrite.rewriter.sql.EncryptSQLRewriter;
+import org.apache.shardingsphere.core.rewrite.rewriter.sql.SQLRewriter;
+import org.apache.shardingsphere.core.route.SQLLogger;
+import org.apache.shardingsphere.core.route.SQLUnit;
 import org.apache.shardingsphere.shardingjdbc.jdbc.adapter.AbstractShardingPreparedStatementAdapter;
 import org.apache.shardingsphere.shardingjdbc.jdbc.core.connection.EncryptConnection;
 import org.apache.shardingsphere.shardingjdbc.jdbc.core.resultset.EncryptResultSet;
@@ -127,11 +133,15 @@ public final class EncryptPreparedStatement extends AbstractShardingPreparedStat
             preparedStatement = preparedStatementGenerator.createPreparedStatement(sqlUnit.getSql());
             replaySetParameter(preparedStatement, sqlUnit.getParameters());
             boolean result = preparedStatement.execute();
-            this.resultSet = new EncryptResultSet(this, preparedStatement.getResultSet(), preparedStatementGenerator.connection.getEncryptRule());
+            this.resultSet = createEncryptResultSet(preparedStatement);
             return result;
         } finally {
             clearParameters();
         }
+    }
+    
+    private EncryptResultSet createEncryptResultSet(final PreparedStatement preparedStatement) throws SQLException {
+        return null == preparedStatement.getResultSet() ? null : new EncryptResultSet(this, preparedStatement.getResultSet(), preparedStatementGenerator.connection.getEncryptRule());
     }
     
     @Override
@@ -142,10 +152,20 @@ public final class EncryptPreparedStatement extends AbstractShardingPreparedStat
     
     private SQLUnit getSQLUnit(final String sql) {
         EncryptConnection connection = preparedStatementGenerator.connection;
-        SQLStatement sqlStatement = connection.getEncryptSQLParsingEngine().parse(false, sql);
-        OptimizeEngineFactory.newInstance(connection.getEncryptRule(), sqlStatement, getParameters()).optimize();
-        SQLBuilder sqlBuilder = new EncryptSQLRewriteEngine(connection.getEncryptRule(), sql, connection.getDatabaseType(), sqlStatement, getParameters()).rewrite();
-        return sqlBuilder.toSQL();
+        SQLStatement sqlStatement = connection.getParseEngine().parse(sql, true);
+        SQLRewriteEngine encryptSQLRewriteEngine = new SQLRewriteEngine(connection.getEncryptRule(), sqlStatement, getParameters());
+        OptimizeResult optimizeResult = OptimizeEngineFactory.newInstance(connection.getEncryptRule(), sqlStatement, getParameters()).optimize();
+        Collection<SQLRewriter> sqlRewriters = new LinkedList<>();
+        if (sqlStatement instanceof DMLStatement) {
+            sqlRewriters.add(new EncryptSQLRewriter(connection.getEncryptRule().getEncryptorEngine(), (DMLStatement) sqlStatement, optimizeResult));
+        }
+        encryptSQLRewriteEngine.init(Collections.<ParameterRewriter>emptyList(), sqlRewriters);
+        SQLUnit result = encryptSQLRewriteEngine.generateSQL();
+        boolean showSQL = connection.getShardingProperties().<Boolean>getValue(ShardingPropertiesConstant.SQL_SHOW);
+        if (showSQL) {
+            SQLLogger.logSQL(result.getSql());
+        }
+        return result;
     }
     
     @Override
@@ -204,25 +224,28 @@ public final class EncryptPreparedStatement extends AbstractShardingPreparedStat
     }
     
     @Override
+    @SuppressWarnings("unchecked")
     protected Collection<? extends Statement> getRoutedStatements() {
-        return Collections.singleton(preparedStatement);
+        Collection<Statement> result = new LinkedList();
+        result.add(preparedStatement);
+        return result;
     }
     
     @RequiredArgsConstructor
     private final class EncryptPreparedStatementGenerator {
-    
+        
         private final EncryptConnection connection;
-    
+        
         private final int resultSetType;
-    
+        
         private final int resultSetConcurrency;
-    
+        
         private final int resultSetHoldability;
-    
+        
         private final int autoGeneratedKeys;
-    
+        
         private final int[] columnIndexes;
-    
+        
         private final String[] columnNames;
         
         private EncryptPreparedStatementGenerator(final EncryptConnection connection) {
@@ -232,40 +255,40 @@ public final class EncryptPreparedStatement extends AbstractShardingPreparedStat
         private EncryptPreparedStatementGenerator(final EncryptConnection connection, final int resultSetType, final int resultSetConcurrency) {
             this(connection, resultSetType, resultSetConcurrency, -1, -1, null, null);
         }
-    
+        
         private EncryptPreparedStatementGenerator(final EncryptConnection connection, final int resultSetType, final int resultSetConcurrency, final int resultSetHoldability) {
             this(connection, resultSetType, resultSetConcurrency, resultSetHoldability, -1, null, null);
         }
-    
+        
         private EncryptPreparedStatementGenerator(final EncryptConnection connection, final int autoGeneratedKeys) {
             this(connection, -1, -1, -1, autoGeneratedKeys, null, null);
         }
-    
+        
         private EncryptPreparedStatementGenerator(final EncryptConnection connection, final int[] columnIndexes) {
             this(connection, -1, -1, -1, -1, columnIndexes, null);
         }
-    
+        
         private EncryptPreparedStatementGenerator(final EncryptConnection connection, final String[] columnNames) {
             this(connection, -1, -1, -1, -1, null, columnNames);
         }
         
-        private PreparedStatement createPreparedStatement(final String sql) {
+        private PreparedStatement createPreparedStatement(final String sql) throws SQLException {
             if (-1 != resultSetType && -1 != resultSetConcurrency && -1 != resultSetHoldability) {
-                return connection.prepareStatement(sql, resultSetType, resultSetConcurrency, resultSetHoldability);
+                return connection.getConnection().prepareStatement(sql, resultSetType, resultSetConcurrency, resultSetHoldability);
             }
             if (-1 != resultSetType && -1 != resultSetConcurrency) {
-                return connection.prepareStatement(sql, resultSetType, resultSetConcurrency);
+                return connection.getConnection().prepareStatement(sql, resultSetType, resultSetConcurrency);
             }
             if (-1 != autoGeneratedKeys) {
-                return connection.prepareStatement(sql, autoGeneratedKeys);
+                return connection.getConnection().prepareStatement(sql, autoGeneratedKeys);
             }
             if (null != columnIndexes) {
-                return connection.prepareStatement(sql, columnIndexes);
+                return connection.getConnection().prepareStatement(sql, columnIndexes);
             }
             if (null != columnNames) {
-                return connection.prepareStatement(sql, columnNames);
+                return connection.getConnection().prepareStatement(sql, columnNames);
             }
-            return connection.prepareStatement(sql);
+            return connection.getConnection().prepareStatement(sql);
         }
     }
 }

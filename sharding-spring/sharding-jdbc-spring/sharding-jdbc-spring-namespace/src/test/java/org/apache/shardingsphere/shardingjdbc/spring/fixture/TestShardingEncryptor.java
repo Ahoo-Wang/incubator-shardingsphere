@@ -17,7 +17,7 @@
 
 package org.apache.shardingsphere.shardingjdbc.spring.fixture;
 
-import org.apache.shardingsphere.spi.algorithm.encrypt.ShardingEncryptor;
+import org.apache.shardingsphere.spi.encrypt.ShardingEncryptor;
 
 import java.util.Properties;
 
@@ -43,6 +43,10 @@ public final class TestShardingEncryptor implements ShardingEncryptor {
     @Override
     public void setProperties(final Properties properties) {
         this.properties = properties;
+    }
+    
+    @Override
+    public void init() {
     }
     
     @Override

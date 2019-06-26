@@ -19,7 +19,7 @@ package org.apache.shardingsphere.shardingjdbc.spring.boot.fixture;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.apache.shardingsphere.spi.algorithm.encrypt.ShardingEncryptor;
+import org.apache.shardingsphere.spi.encrypt.ShardingEncryptor;
 
 import java.util.Properties;
 
@@ -37,6 +37,10 @@ public final class TestShardingEncryptor implements ShardingEncryptor {
     @Override
     public String getType() {
         return "test";
+    }
+    
+    @Override
+    public void init() {
     }
     
     @Override

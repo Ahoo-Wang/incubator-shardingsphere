@@ -19,6 +19,7 @@ package org.apache.shardingsphere.shardingproxy.frontend.mysql.command;
 
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.shardingsphere.shardingproxy.backend.communication.jdbc.connection.BackendConnection;
 import org.apache.shardingsphere.shardingproxy.frontend.api.CommandExecutor;
 import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.admin.initdb.MySQLComInitDbExecutor;
@@ -26,15 +27,17 @@ import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.admin.ping
 import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.admin.quit.MySQLComQuitExecutor;
 import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.generic.MySQLUnsupportedCommandExecutor;
 import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.query.binary.close.MySQLComStmtCloseExecutor;
-import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.query.binary.execute.MySQLQueryComStmtExecuteExecutor;
+import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.query.binary.execute.MySQLComStmtExecuteExecutor;
 import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.query.binary.prepare.MySQLComStmtPrepareExecutor;
+import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.query.binary.reset.MySQLComStmtResetExecutor;
 import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.query.text.fieldlist.MySQLComFieldListPacketExecutor;
 import org.apache.shardingsphere.shardingproxy.frontend.mysql.command.query.text.query.MySQLComQueryPacketExecutor;
 import org.apache.shardingsphere.shardingproxy.transport.mysql.packet.command.MySQLCommandPacketType;
 import org.apache.shardingsphere.shardingproxy.transport.mysql.packet.command.admin.initdb.MySQLComInitDbPacket;
 import org.apache.shardingsphere.shardingproxy.transport.mysql.packet.command.query.binary.close.MySQLComStmtClosePacket;
-import org.apache.shardingsphere.shardingproxy.transport.mysql.packet.command.query.binary.execute.MySQLQueryComStmtExecutePacket;
+import org.apache.shardingsphere.shardingproxy.transport.mysql.packet.command.query.binary.execute.MySQLComStmtExecutePacket;
 import org.apache.shardingsphere.shardingproxy.transport.mysql.packet.command.query.binary.prepare.MySQLComStmtPreparePacket;
+import org.apache.shardingsphere.shardingproxy.transport.mysql.packet.command.query.binary.reset.MySQLComStmtResetPacket;
 import org.apache.shardingsphere.shardingproxy.transport.mysql.packet.command.query.text.fieldlist.MySQLComFieldListPacket;
 import org.apache.shardingsphere.shardingproxy.transport.mysql.packet.command.query.text.query.MySQLComQueryPacket;
 import org.apache.shardingsphere.shardingproxy.transport.packet.CommandPacket;
@@ -45,6 +48,7 @@ import org.apache.shardingsphere.shardingproxy.transport.packet.CommandPacket;
  * @author zhangliang
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
+@Slf4j
 public final class MySQLCommandExecutorFactory {
     
     /**
@@ -56,6 +60,7 @@ public final class MySQLCommandExecutorFactory {
      * @return command executor
      */
     public static CommandExecutor newInstance(final MySQLCommandPacketType commandPacketType, final CommandPacket commandPacket, final BackendConnection backendConnection) {
+        log.debug("Execute packet type: {}, value: {}", commandPacketType, commandPacket);
         switch (commandPacketType) {
             case COM_QUIT:
                 return new MySQLComQuitExecutor();
@@ -68,7 +73,9 @@ public final class MySQLCommandExecutorFactory {
             case COM_STMT_PREPARE:
                 return new MySQLComStmtPrepareExecutor((MySQLComStmtPreparePacket) commandPacket, backendConnection);
             case COM_STMT_EXECUTE:
-                return new MySQLQueryComStmtExecuteExecutor((MySQLQueryComStmtExecutePacket) commandPacket, backendConnection);
+                return new MySQLComStmtExecuteExecutor((MySQLComStmtExecutePacket) commandPacket, backendConnection);
+            case COM_STMT_RESET:
+                return new MySQLComStmtResetExecutor((MySQLComStmtResetPacket) commandPacket);
             case COM_STMT_CLOSE:
                 return new MySQLComStmtCloseExecutor((MySQLComStmtClosePacket) commandPacket);
             case COM_PING:

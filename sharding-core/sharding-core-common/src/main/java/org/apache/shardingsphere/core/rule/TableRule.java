@@ -23,22 +23,23 @@ import lombok.Getter;
 import lombok.ToString;
 import org.apache.shardingsphere.api.config.sharding.KeyGeneratorConfiguration;
 import org.apache.shardingsphere.api.config.sharding.TableRuleConfiguration;
-import org.apache.shardingsphere.core.encrypt.ShardingEncryptorStrategy;
 import org.apache.shardingsphere.core.exception.ShardingException;
-import org.apache.shardingsphere.core.keygen.ShardingKeyGeneratorFactory;
-import org.apache.shardingsphere.core.routing.strategy.ShardingStrategy;
-import org.apache.shardingsphere.core.routing.strategy.ShardingStrategyFactory;
+import org.apache.shardingsphere.core.spi.algorithm.keygen.ShardingKeyGeneratorServiceLoader;
+import org.apache.shardingsphere.core.strategy.route.ShardingStrategy;
+import org.apache.shardingsphere.core.strategy.route.ShardingStrategyFactory;
 import org.apache.shardingsphere.core.util.InlineExpressionParser;
-import org.apache.shardingsphere.spi.algorithm.keygen.ShardingKeyGenerator;
+import org.apache.shardingsphere.spi.keygen.ShardingKeyGenerator;
 
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Table rule.
@@ -46,12 +47,15 @@ import java.util.Map;
  * @author zhangliang
  */
 @Getter
-@ToString(exclude = "dataNodeIndexMap")
+@ToString(exclude = {"dataNodeIndexMap", "actualTables"})
 public final class TableRule {
     
     private final String logicTable;
     
     private final List<DataNode> actualDataNodes;
+    
+    @Getter(AccessLevel.NONE)
+    private final Set<String> actualTables;
     
     @Getter(AccessLevel.NONE)
     private final Map<DataNode, Integer> dataNodeIndexMap;
@@ -64,32 +68,26 @@ public final class TableRule {
     
     private final ShardingKeyGenerator shardingKeyGenerator;
     
-    private final ShardingEncryptorStrategy shardingEncryptorStrategy;
-    
-    private final String logicIndex;
-    
     public TableRule(final String defaultDataSourceName, final String logicTableName) {
         logicTable = logicTableName.toLowerCase();
         actualDataNodes = Collections.singletonList(new DataNode(defaultDataSourceName, logicTableName));
+        actualTables = getActualTables();
         dataNodeIndexMap = Collections.emptyMap();
         databaseShardingStrategy = null;
         tableShardingStrategy = null;
         generateKeyColumn = null;
         shardingKeyGenerator = null;
-        shardingEncryptorStrategy = null;
-        logicIndex = null;
     }
     
     public TableRule(final Collection<String> dataSourceNames, final String logicTableName) {
         logicTable = logicTableName.toLowerCase();
         dataNodeIndexMap = new HashMap<>(dataSourceNames.size(), 1);
         actualDataNodes = generateDataNodes(logicTableName, dataSourceNames);
+        actualTables = getActualTables();
         databaseShardingStrategy = null;
         tableShardingStrategy = null;
         generateKeyColumn = null;
         shardingKeyGenerator = null;
-        shardingEncryptorStrategy = null;
-        logicIndex = null;
     }
     
     public TableRule(final TableRuleConfiguration tableRuleConfig, final ShardingDataSourceNames shardingDataSourceNames, final String defaultGenerateKeyColumn) {
@@ -98,13 +96,20 @@ public final class TableRule {
         dataNodeIndexMap = new HashMap<>(dataNodes.size(), 1);
         actualDataNodes = isEmptyDataNodes(dataNodes)
             ? generateDataNodes(tableRuleConfig.getLogicTable(), shardingDataSourceNames.getDataSourceNames()) : generateDataNodes(dataNodes, shardingDataSourceNames.getDataSourceNames());
+        actualTables = getActualTables();
         databaseShardingStrategy = null == tableRuleConfig.getDatabaseShardingStrategyConfig() ? null : ShardingStrategyFactory.newInstance(tableRuleConfig.getDatabaseShardingStrategyConfig());
         tableShardingStrategy = null == tableRuleConfig.getTableShardingStrategyConfig() ? null : ShardingStrategyFactory.newInstance(tableRuleConfig.getTableShardingStrategyConfig());
         generateKeyColumn = getGenerateKeyColumn(tableRuleConfig.getKeyGeneratorConfig(), defaultGenerateKeyColumn);
         shardingKeyGenerator = containsKeyGeneratorConfiguration(tableRuleConfig)
-                ? ShardingKeyGeneratorFactory.getInstance().newAlgorithm(tableRuleConfig.getKeyGeneratorConfig().getType(), tableRuleConfig.getKeyGeneratorConfig().getProperties()) : null;
-        shardingEncryptorStrategy = null == tableRuleConfig.getEncryptorConfig() ? null : new ShardingEncryptorStrategy(tableRuleConfig.getEncryptorConfig());
-        logicIndex = null == tableRuleConfig.getLogicIndex() ? null : tableRuleConfig.getLogicIndex().toLowerCase();
+                ? new ShardingKeyGeneratorServiceLoader().newService(tableRuleConfig.getKeyGeneratorConfig().getType(), tableRuleConfig.getKeyGeneratorConfig().getProperties()) : null;
+    }
+    
+    private Set<String> getActualTables() {
+        Set<String> result = new HashSet<>(actualDataNodes.size(), 1);
+        for (DataNode each : actualDataNodes) {
+            result.add(each.getTableName());
+        }
+        return result;
     }
     
     private boolean containsKeyGeneratorConfiguration(final TableRuleConfiguration tableRuleConfiguration) {
@@ -201,27 +206,6 @@ public final class TableRule {
     }
     
     boolean isExisted(final String actualTableName) {
-        for (DataNode each : actualDataNodes) {
-            if (each.getTableName().equalsIgnoreCase(actualTableName)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    
-    /**
-     * Get all sharding columns.
-     * 
-     * @return all sharding columns
-     */
-    public Collection<String> getAllShardingColumns() {
-        Collection<String> result = new LinkedList<>();
-        if (null != databaseShardingStrategy) {
-            result.addAll(databaseShardingStrategy.getShardingColumns());
-        }
-        if (null != tableShardingStrategy) {
-            result.addAll(tableShardingStrategy.getShardingColumns());
-        }
-        return result;
+        return actualTables.contains(actualTableName);
     }
 }
